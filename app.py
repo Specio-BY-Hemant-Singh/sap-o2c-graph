@@ -120,4 +120,4 @@ if user_input:
             st.error(f"Error: {str(e)}")
 
 st.markdown("---")
-st.caption("Final L9 FDE Submission | Optimized for camelCase SAP Schemas")
+st.caption("Final Hemant Singh FDE Submission | Optimized for camelCase SAP Schemas")
