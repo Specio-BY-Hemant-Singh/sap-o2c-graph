@@ -140,4 +140,4 @@ if user_input:
             st.error(f"SQL Error: {str(e)}")
 
 st.markdown("---")
-st.caption("L9 Forward Deployed Engineer | Hemant Singh | Final Submission")
+st.caption(" Forward Deployed Engineer | Hemant Singh | Final Submission")
