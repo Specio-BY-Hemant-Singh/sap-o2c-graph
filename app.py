@@ -114,7 +114,7 @@ if user_input:
                                 nodes.append(Node(id=node_id, label=f"{col}\n{node_id}", color=color, size=20))
                                 seen.add(node_id)
 
-                    # Step E: Edge Creation (Sequential)
+                    # Step E: Edge Creation (Aesthetic styling)
                     for i in range(len(df.columns) - 1):
                         for _, row in df.iterrows():
                             u, v = row[i], row[i+1]
@@ -123,21 +123,28 @@ if user_input:
                             if pd.notna(u) and pd.notna(v):
                                 u_str, v_str = str(u).strip(), str(v).strip()
                                 if u_str.lower() != 'nan' and v_str.lower() != 'nan' and u_str != "" and v_str != "":
-                                    edges.append(Edge(source=u_str, target=v_str, color="#5D6D7E"))
+                                    # Light blue edges to match your original reference UI
+                                    edges.append(Edge(source=u_str, target=v_str, color="#BCE0FD", width=1.5))
 
-                    # Step F: Hierarchical Rendering
+                    # Step F: Interactive Canvas Rendering
                     config = Config(
-                        width="100", # Responsive width
-                        height=600, 
-                        directed=True, 
-                        hierarchical=True, 
-                        direction="LR", 
+                        width="100%",          # Responsive: Fills the container width perfectly
+                        height="700px",        # Fixed window height
+                        directed=True,         # Shows flow direction arrows
+                        physics=True,          # Enables the "starburst" organic layout
+                        hierarchical=False,    # Disabled so nodes can spread out 360 degrees
                         nodeHighlightBehavior=True, 
-                        highlightColor="#F7A7A6"
+                        highlightColor="#F7A7A6",
+                        # The crucial Interaction settings for Pan & Zoom:
+                        interaction={
+                            "dragNodes": True, # Lets users drag individual nodes around
+                            "dragView": True,  # Lets users click and drag the background to pan (Up/Down/Left/Right)
+                            "zoomView": True,  # Lets users use the mouse wheel/trackpad to zoom in and out
+                            "hover": True      # Highlights connections when hovering over a node
+                        }
                     )
                     
                     agraph(nodes=nodes, edges=edges, config=config)
-
                     # Step G: Technical Audit Trail
                     with st.expander("Technical Trace (View SQL & Data)"):
                         st.code(sql, language="sql")
