@@ -19,7 +19,6 @@ st.markdown("""
 genai.configure(api_key=st.secrets["GEMINI_KEY"])
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# Removed cache_resource to prevent "stale socket/closed connection" errors in production.
 def run_query(query):
     with snowflake.connector.connect(
         user=st.secrets["SF_USER"],
@@ -33,7 +32,7 @@ def run_query(query):
             cur.execute(query)
             return cur.fetch_pandas_all()
 
-# --- 3. L9 SEMANTIC MAP (Strict Guardrails & Schema) ---
+# --- 3. L9 SEMANTIC MAP ---
 METADATA_PROMPT = """
 You are a Senior SAP Data Architect. Write Snowflake SQL for the O2C flow.
 IMPORTANT: Wrap ALL column names in double quotes. Do NOT invent column names.
@@ -50,7 +49,6 @@ SQL LOGIC RULES:
 - Use UPPER(LTRIM(CAST("column" AS STRING), '0')) on BOTH sides of all JOIN conditions to handle leading zeros.
 - If asked a non-SAP or off-topic question, return EXACTLY: SELECT 'UNSUPPORTED_QUERY'
 - Return ONLY the raw SQL code. No markdown formatting, no backticks.
-- IMPORTANT: When joining tables, always SELECT the columns in logical order (e.g., "salesOrder", then "deliveryDocument", then "billingDocument").
 """
 
 # --- 4. UI SIDEBAR ---
@@ -58,29 +56,35 @@ with st.sidebar:
     st.title("🕸️ Graph Agent")
     st.markdown("Analyze the **Order-to-Cash** process.")
     
-    # Pre-fill input for better UX
-    user_input = st.text_input("Ask a question:", placeholder="Trace flow for Order 740506")
+    user_input = st.text_input("Ask a question:", value="Trace flow for Order 740506")
+    run_btn = st.button("🚀 Generate Graph", use_container_width=True)
     
     st.divider()
     st.subheader("Process Shortcuts")
-    if st.button("🚩 Identify Broken Flows"):
-        user_input = "Show sales orders that have no entries in DELIVERY_ITEMS"
-    if st.button("📦 Top Products"):
-        user_input = "Which materials in SALES_ORDER_ITEMS have the most billing documents?"
+    broken_btn = st.button("🚩 Identify Broken Flows", use_container_width=True)
+    top_btn = st.button("📦 Top Products", use_container_width=True)
+
+# Determine which query to run
+active_query = None
+if run_btn and user_input:
+    active_query = user_input
+elif broken_btn:
+    active_query = "Show sales orders that have no entries in DELIVERY_ITEMS"
+elif top_btn:
+    active_query = "Which materials in SALES_ORDER_ITEMS have the most billing documents?"
 
 # --- 5. EXECUTION & GRAPH ENGINE ---
 st.title("SAP Order-to-Cash Knowledge Graph")
 st.caption("FDE Submission | Process Mining & Semantic Discovery")
 
-if user_input:
+if active_query:
     with st.spinner("🤖 Processing Knowledge Graph..."):
         try:
             # Step A: Text-to-SQL
-            ai_response = model.generate_content(f"{METADATA_PROMPT}\nUser Request: {user_input}")
-            # Robust SQL cleanup
+            ai_response = model.generate_content(f"{METADATA_PROMPT}\nUser Request: {active_query}")
             sql = ai_response.text.strip().replace("```sql", "").replace("```", "").strip()
             
-            # Step B: Strict Guardrail Check
+            # Step B: Guardrail Check
             if "UNSUPPORTED_QUERY" in sql.upper():
                 st.warning("This system is designed to answer questions related to the provided dataset only.")
             else:
@@ -92,15 +96,19 @@ if user_input:
                 else:
                     nodes, edges, seen = [],[], set()
                     
-                    # Aesthetic Mapping
+                    # Ultra-Bright Colors for Dark Mode Contrast
                     entity_colors = {
-                        "ORDER": "#FF4B4B", "DELIVERY": "#29B5E8", "BILLING": "#FFD166",
-                        "ACCOUNTING": "#06D6A0", "PAYMENT": "#FFFFFF", "MATERIAL": "#B19CD9"
+                        "ORDER": "#FF3333",      # Bright Red
+                        "DELIVERY": "#3399FF",   # Bright Blue
+                        "BILLING": "#FFCC00",    # Bright Yellow
+                        "ACCOUNTING": "#00CC66", # Bright Green
+                        "PAYMENT": "#E0E0E0",    # Light Grey
+                        "MATERIAL": "#9933FF"    # Bright Purple
                     }
 
-                    # Step D: Node Creation (High-Contrast Styling)
+                    # Step D: Node Creation (Crash-Proof)
                     for col in df.columns:
-                        color = "#999999" # Default Grey
+                        color = "#888888" 
                         for key in entity_colors:
                             if key in col.upper(): color = entity_colors[key]
                         
@@ -110,66 +118,43 @@ if user_input:
                             
                             node_id = str(val)
                             if node_id not in seen:
-                                nodes.append(Node(
-                                    id=node_id, 
-                                    label=f"{col}\n{node_id}", 
-                                    size=25,
-                                    shape="dot",
-                                    # High contrast: Colored node with thick white border
-                                    color={"background": color, "border": "#FFFFFF"},
-                                    borderWidth=2,
-                                    # High contrast text: Black text on a solid white label background
-                                    font={"color": "#000000", "background": "rgba(255, 255, 255, 0.8)", "size": 14, "face": "arial"}
-                                ))
+                                # Using safe string parameters guaranteed not to crash the frontend
+                                nodes.append(Node(id=node_id, label=f"{col}\n{node_id}", color=color, size=25, shape="dot"))
                                 seen.add(node_id)
 
-                    # Step E: Edge Creation (Thick, Universal Contrast)
+                    # Step E: Edge Creation (Solid White for Visibility)
                     for i in range(len(df.columns) - 1):
                         for _, row in df.iterrows():
                             u, v = row[i], row[i+1]
                             if pd.notna(u) and pd.notna(v):
                                 u_str, v_str = str(u).strip(), str(v).strip()
                                 if u_str.lower() != 'nan' and v_str.lower() != 'nan' and u_str != "" and v_str != "":
-                                    edges.append(Edge(
-                                        source=u_str, 
-                                        target=v_str, 
-                                        color="#888888", # Strong grey line 
-                                        width=2.5,       # Thicker line
-                                        arrows="to"      # Clear directional arrows
-                                    ))
+                                    # White lines, thick width
+                                    edges.append(Edge(source=u_str, target=v_str, color="#FFFFFF", width=2))
 
-                    # Step F: Interactive Canvas Rendering
+                    # Step F: Massive Interactive Canvas
+                    # Using integer 800 for height to ensure it actually resizes!
                     config = Config(
-                        width="100%",          
-                        height="1080px",        
-                        directed=True,         
-                        physics=True,          # Creates organic starburst layout
-                        hierarchical=False,    
+                        width=1500, 
+                        height=800, 
+                        directed=True, 
+                        physics=True, 
+                        hierarchical=False, 
                         nodeHighlightBehavior=True, 
-                        highlightColor="#F7A7A6",
-                        interaction={
-                            "dragNodes": True, 
-                            "dragView": True,  
-                            "zoomView": True,  
-                            "hover": True      
-                        }
+                        highlightColor="#F7A7A6"
                     )
                     
+                    # By default, agraph supports Zoom (scroll wheel) and Pan (click & drag)
                     agraph(nodes=nodes, edges=edges, config=config)
-                    
+
                     # Step G: Technical Audit Trail
                     with st.expander("Technical Trace (View SQL & Data)"):
                         st.code(sql, language="sql")
                         st.dataframe(df)
 
-        except snowflake.connector.errors.ProgrammingError as pe:
-            st.error("SQL Compilation Error. The AI generated an invalid query.")
-            with st.expander("View AI Generated SQL"):
-                st.code(sql, language="sql")
-                st.error(str(pe))
         except Exception as e:
             st.error(f"System Error: {str(e)}")
 
 # --- 6. FOOTER ---
 st.markdown("---")
-st.caption("FDE Submission | Architecture: Snowflake + Gemini + Streamlit")
+st.caption(" FDE Submission | Architecture: Snowflake + Gemini + Streamlit")
