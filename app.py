@@ -17,7 +17,7 @@ st.markdown("""
 
 # --- 2. SECURE CONNECTIVITY ---
 genai.configure(api_key=st.secrets["GEMINI_KEY"])
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('Gemini-Embedding-1')
 
 def run_query(query):
     with snowflake.connector.connect(
