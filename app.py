@@ -98,53 +98,65 @@ if user_input:
                         "ACCOUNTING": "#06D6A0", "PAYMENT": "#FFFFFF", "MATERIAL": "#B19CD9"
                     }
 
-                    # Step D: Node Creation (with NaN Protection)
+                    # Step D: Node Creation (High-Contrast Styling)
                     for col in df.columns:
-                        color = "#999999" # Default
+                        color = "#999999" # Default Grey
                         for key in entity_colors:
                             if key in col.upper(): color = entity_colors[key]
                         
-                        # Dropna ensures we don't iterate over missing values
                         for val in df[col].dropna().unique():
                             if pd.isna(val) or str(val).strip().lower() == 'nan' or str(val).strip() == '':
                                 continue
                             
                             node_id = str(val)
                             if node_id not in seen:
-                                nodes.append(Node(id=node_id, label=f"{col}\n{node_id}", color=color, size=20))
+                                nodes.append(Node(
+                                    id=node_id, 
+                                    label=f"{col}\n{node_id}", 
+                                    size=25,
+                                    shape="dot",
+                                    # High contrast: Colored node with thick white border
+                                    color={"background": color, "border": "#FFFFFF"},
+                                    borderWidth=2,
+                                    # High contrast text: Black text on a solid white label background
+                                    font={"color": "#000000", "background": "rgba(255, 255, 255, 0.8)", "size": 14, "face": "arial"}
+                                ))
                                 seen.add(node_id)
 
-                    # Step E: Edge Creation (Aesthetic styling)
+                    # Step E: Edge Creation (Thick, Universal Contrast)
                     for i in range(len(df.columns) - 1):
                         for _, row in df.iterrows():
                             u, v = row[i], row[i+1]
-                            
-                            # Strict validation to prevent drawing edges to/from 'None' or 'NaN'
                             if pd.notna(u) and pd.notna(v):
                                 u_str, v_str = str(u).strip(), str(v).strip()
                                 if u_str.lower() != 'nan' and v_str.lower() != 'nan' and u_str != "" and v_str != "":
-                                    # Light blue edges to match your original reference UI
-                                    edges.append(Edge(source=u_str, target=v_str, color="#BCE0FD", width=1.5))
+                                    edges.append(Edge(
+                                        source=u_str, 
+                                        target=v_str, 
+                                        color="#888888", # Strong grey line 
+                                        width=2.5,       # Thicker line
+                                        arrows="to"      # Clear directional arrows
+                                    ))
 
                     # Step F: Interactive Canvas Rendering
                     config = Config(
-                        width="100%",          # Responsive: Fills the container width perfectly
-                        height="700px",        # Fixed window height
-                        directed=True,         # Shows flow direction arrows
-                        physics=True,          # Enables the "starburst" organic layout
-                        hierarchical=False,    # Disabled so nodes can spread out 360 degrees
+                        width="100%",          
+                        height="7000px",        
+                        directed=True,         
+                        physics=True,          # Creates organic starburst layout
+                        hierarchical=False,    
                         nodeHighlightBehavior=True, 
                         highlightColor="#F7A7A6",
-                        # The crucial Interaction settings for Pan & Zoom:
                         interaction={
-                            "dragNodes": True, # Lets users drag individual nodes around
-                            "dragView": True,  # Lets users click and drag the background to pan (Up/Down/Left/Right)
-                            "zoomView": True,  # Lets users use the mouse wheel/trackpad to zoom in and out
-                            "hover": True      # Highlights connections when hovering over a node
+                            "dragNodes": True, 
+                            "dragView": True,  
+                            "zoomView": True,  
+                            "hover": True      
                         }
                     )
                     
                     agraph(nodes=nodes, edges=edges, config=config)
+                    
                     # Step G: Technical Audit Trail
                     with st.expander("Technical Trace (View SQL & Data)"):
                         st.code(sql, language="sql")
