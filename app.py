@@ -4,16 +4,9 @@ import google.generativeai as genai
 from streamlit_agraph import agraph, Node, Edge, Config
 import pandas as pd
 
-# --- 1. PAGE CONFIGURATION & STYLING ---
+# --- 1. PAGE CONFIGURATION ---
+# Removed forced CSS so the app respects the user's Light/Dark theme choice natively
 st.set_page_config(page_title="SAP O2C Graph Agent", layout="wide")
-
-st.markdown("""
-    <style>
-    .stApp { background-color: #0E1117; color: #FFFFFF; }
-    [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
-    .stTextInput > div > div > input { background-color: #0d1117; color: white; border: 1px solid #30363D; }
-    </style>
-    """, unsafe_allow_html=True)
 
 # --- 2. SECURE CONNECTIVITY ---
 genai.configure(api_key=st.secrets["GEMINI_KEY"])
@@ -96,19 +89,19 @@ if active_query:
                 else:
                     nodes, edges, seen = [],[], set()
                     
-                    # Ultra-Bright Colors for Dark Mode Contrast
+                    # Theme-Agnostic Colors (Look great on Light AND Dark modes)
                     entity_colors = {
-                        "ORDER": "#FF3333",      # Bright Red
-                        "DELIVERY": "#3399FF",   # Bright Blue
-                        "BILLING": "#FFCC00",    # Bright Yellow
-                        "ACCOUNTING": "#00CC66", # Bright Green
-                        "PAYMENT": "#E0E0E0",    # Light Grey
-                        "MATERIAL": "#9933FF"    # Bright Purple
+                        "ORDER": "#E74C3C",      # Red
+                        "DELIVERY": "#3498DB",   # Blue
+                        "BILLING": "#F1C40F",    # Yellow
+                        "ACCOUNTING": "#2ECC71", # Green
+                        "PAYMENT": "#95A5A6",    # Grey
+                        "MATERIAL": "#9B59B6"    # Purple
                     }
 
-                    # Step D: Node Creation (Crash-Proof)
+                    # Step D: Node Creation
                     for col in df.columns:
-                        color = "#888888" 
+                        color = "#BDC3C7" 
                         for key in entity_colors:
                             if key in col.upper(): color = entity_colors[key]
                         
@@ -118,24 +111,34 @@ if active_query:
                             
                             node_id = str(val)
                             if node_id not in seen:
-                                # Using safe string parameters guaranteed not to crash the frontend
-                                nodes.append(Node(id=node_id, label=f"{col}\n{node_id}", color=color, size=25, shape="dot"))
+                                # Added font styling to ensure text is visible on light/dark backgrounds
+                                nodes.append(Node(
+                                    id=node_id, 
+                                    label=f"{col}\n{node_id}", 
+                                    color=color, 
+                                    size=25, 
+                                    shape="dot",
+                                    font={"color": "#2C3E50", "size": 14, "face": "Arial", "background": "rgba(255,255,255,0.7)"}
+                                ))
                                 seen.add(node_id)
 
-                    # Step E: Edge Creation (Solid White for Visibility)
+                    # Step E: Edge Creation
                     for i in range(len(df.columns) - 1):
                         for _, row in df.iterrows():
                             u, v = row[i], row[i+1]
                             if pd.notna(u) and pd.notna(v):
                                 u_str, v_str = str(u).strip(), str(v).strip()
                                 if u_str.lower() != 'nan' and v_str.lower() != 'nan' and u_str != "" and v_str != "":
-                                    # White lines, thick width
-                                    edges.append(Edge(source=u_str, target=v_str, color="#FFFFFF", width=2))
+                                    # Changed edge color to Slate Gray so it's visible on White and Black backgrounds
+                                    edges.append(Edge(source=u_str, target=v_str, color="#5D6D7E", width=2))
+
+                    # Helpful UI prompt if the user runs a 1-column query
+                    if len(df.columns) == 1:
+                        st.info("ℹ️ Note: This query returned a single list of items. To see connecting lines, ask a question that traces a flow between two or more document types.")
 
                     # Step F: Massive Interactive Canvas
-                    # Using integer 800 for height to ensure it actually resizes!
                     config = Config(
-                        width=1500, 
+                        width="100%", 
                         height=800, 
                         directed=True, 
                         physics=True, 
@@ -144,7 +147,6 @@ if active_query:
                         highlightColor="#F7A7A6"
                     )
                     
-                    # By default, agraph supports Zoom (scroll wheel) and Pan (click & drag)
                     agraph(nodes=nodes, edges=edges, config=config)
 
                     # Step G: Technical Audit Trail
@@ -157,4 +159,4 @@ if active_query:
 
 # --- 6. FOOTER ---
 st.markdown("---")
-st.caption(" FDE Submission | Architecture: Snowflake + Gemini + Streamlit")
+st.caption("Senior FDE Submission | Architecture: Snowflake + Gemini + Streamlit")
