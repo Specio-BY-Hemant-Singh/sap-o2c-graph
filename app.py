@@ -11,7 +11,7 @@ st.set_page_config(page_title="SAP O2C Graph AI", layout="wide", initial_sidebar
 # Using the most stable model string to avoid 'NotFound' errors
 try:
     genai.configure(api_key=st.secrets["GEMINI_KEY"])
-    model = genai.GenerativeModel('Gemini 2.5 Flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception as e:
     st.error("Gemini API Configuration Failed. Check your Secrets.")
 
