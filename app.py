@@ -5,7 +5,8 @@ from streamlit_agraph import agraph, Node, Edge, Config
 
 # --- CONFIGURATION ---
 genai.configure(api_key=st.secrets["GEMINI_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Try using the 'latest' tag which is more reliable across regions
+model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
 
 def get_db_connection():
     return snowflake.connector.connect(
