@@ -2,142 +2,155 @@ import streamlit as st
 import snowflake.connector
 import google.generativeai as genai
 from streamlit_agraph import agraph, Node, Edge, Config
+import pandas as pd
 
-# --- 1. PAGE CONFIG ---
-st.set_page_config(page_title="SAP O2C Knowledge Graph", layout="wide")
+# --- 1. PAGE CONFIGURATION & STYLING ---
+st.set_page_config(page_title="SAP O2C Graph Agent", layout="wide")
 
-# Custom CSS for a more "Enterprise" look
 st.markdown("""
     <style>
     .stApp { background-color: #0E1117; color: #FFFFFF; }
-    .stTextInput > div > div > input { background-color: #1A1C24; color: white; border: 1px solid #3E424B; }
+    [data-testid="stSidebar"] { background-color: #161B22; border-right: 1px solid #30363D; }
+    .stTextInput > div > div > input { background-color: #0d1117; color: white; border: 1px solid #30363D; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CONNECTIVITY ---
+# --- 2. SECURE CONNECTIVITY ---
 genai.configure(api_key=st.secrets["GEMINI_KEY"])
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-@st.cache_resource
-def get_sf_conn():
-    return snowflake.connector.connect(
-        user=st.secrets["SF_USER"], password=st.secrets["SF_PASSWORD"],
-        account=st.secrets["SF_ACCOUNT"], warehouse=st.secrets["SF_WAREHOUSE"],
-        database=st.secrets["SF_DATABASE"], schema=st.secrets["SF_SCHEMA"]
-    )
-
+# Removed cache_resource to prevent "stale socket/closed connection" errors in production.
 def run_query(query):
-    with get_sf_conn().cursor() as cur:
-        cur.execute(query)
-        return cur.fetch_pandas_all()
+    with snowflake.connector.connect(
+        user=st.secrets["SF_USER"],
+        password=st.secrets["SF_PASSWORD"],
+        account=st.secrets["SF_ACCOUNT"],
+        warehouse=st.secrets["SF_WAREHOUSE"],
+        database=st.secrets["SF_DATABASE"],
+        schema=st.secrets["SF_SCHEMA"]
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            return cur.fetch_pandas_all()
 
-# --- 3. REFINED SEMANTIC MAP (Fixes the SQL Error) ---
+# --- 3. L9 SEMANTIC MAP (Strict Guardrails & Schema) ---
 METADATA_PROMPT = """
 You are a Senior SAP Data Architect. Write Snowflake SQL for the O2C flow.
-IMPORTANT: Wrap ALL column names in double quotes.
+IMPORTANT: Wrap ALL column names in double quotes. Do NOT invent column names.
 
-SCHEMA LINKS (The "Golden Path"):
-1. SALES_ORDER_HEADERS: Key is "salesOrder"
-2. DELIVERY_ITEMS: Link "referenceSdDocument" matches SALES_ORDER_HEADERS."salesOrder"
-3. BILLING_ITEMS: Link "referenceSdDocument" matches DELIVERY_ITEMS."deliveryDocument"
-4. JOURNAL_ENTRIES: Link "referenceDocument" matches BILLING_ITEMS."billingDocument"
-5. PAYMENTS: Link "accountingDocument" matches JOURNAL_ENTRIES."accountingDocument"
+USE ONLY THESE TABLES AND COLUMNS:
+1. SALES_ORDER_HEADERS: "salesOrder", "soldToParty", "totalNetAmount"
+2. SALES_ORDER_ITEMS: "salesOrder", "material", "netAmount"
+3. DELIVERY_ITEMS: "deliveryDocument", "referenceSdDocument" (links to "salesOrder")
+4. BILLING_ITEMS: "billingDocument", "referenceSdDocument" (links to "deliveryDocument")
+5. JOURNAL_ENTRIES: "accountingDocument", "referenceDocument" (links to "billingDocument")
+6. PAYMENTS: "accountingDocument", "clearingAccountingDocument", "amountInTransactionCurrency"
 
-SQL RULES:
-- Return ONLY SQL.
-- Use LTRIM(CAST("col" AS STRING), '0') for ALL joins to handle leading zeros.
-- To 'Trace', join through the ITEMS tables to find the links, but select Header IDs for the final graph.
-- If the user asks for materials, include SALES_ORDER_ITEMS."material".
+SQL LOGIC RULES:
+- Use UPPER(LTRIM(CAST("column" AS STRING), '0')) on BOTH sides of all JOIN conditions to handle leading zeros.
+- If asked a non-SAP or off-topic question, return EXACTLY: SELECT 'UNSUPPORTED_QUERY'
+- Return ONLY the raw SQL code. No markdown formatting, no backticks.
+- IMPORTANT: When joining tables, always SELECT the columns in logical order (e.g., "salesOrder", then "deliveryDocument", then "billingDocument").
 """
 
-# --- 4. UI ---
-st.title("🕸️ SAP Order-to-Cash Knowledge Graph")
-st.caption("AI-Powered Process Mining & Relationship Discovery")
-
+# --- 4. UI SIDEBAR ---
 with st.sidebar:
-    st.header("Graph Agent")
-    user_input = st.text_input("Analyze:", placeholder="Trace flow for Order 740506")
+    st.title("🕸️ Graph Agent")
+    st.markdown("Analyze the **Order-to-Cash** process.")
+    
+    # Pre-fill input for better UX
+    user_input = st.text_input("Ask a question:", placeholder="Trace flow for Order 740506")
     
     st.divider()
-    if st.button("🚩 Broken Flows (No Delivery)"):
-        user_input = "Show me Sales Orders that exist in SALES_ORDER_HEADERS but have no entry in DELIVERY_ITEMS"
+    st.subheader("Process Shortcuts")
+    if st.button("🚩 Identify Broken Flows"):
+        user_input = "Show sales orders that have no entries in DELIVERY_ITEMS"
     if st.button("📦 Top Products"):
         user_input = "Which materials in SALES_ORDER_ITEMS have the most billing documents?"
 
-# --- 5. THE GRAPH ENGINE ---
+# --- 5. EXECUTION & GRAPH ENGINE ---
+st.title("SAP Order-to-Cash Knowledge Graph")
+st.caption("FDE Submission | Process Mining & Semantic Discovery")
+
 if user_input:
-    with st.spinner("🤖 AI Agent navigating Snowflake..."):
+    with st.spinner("🤖 Processing Knowledge Graph..."):
         try:
-            # Step A: AI Reasoning
-            response = model.generate_content(f"{METADATA_PROMPT}\nUser Request: {user_input}")
-            sql = response.text.strip().replace("```sql", "").replace("```", "")
+            # Step A: Text-to-SQL
+            ai_response = model.generate_content(f"{METADATA_PROMPT}\nUser Request: {user_input}")
+            # Robust SQL cleanup
+            sql = ai_response.text.strip().replace("```sql", "").replace("```", "").strip()
             
-            # Step B: Execution
-            df = run_query(sql)
-
-            if df.empty:
-                st.info("No data found for this path. Try a different document ID.")
+            # Step B: Strict Guardrail Check
+            if "UNSUPPORTED_QUERY" in sql.upper():
+                st.warning("This system is designed to answer questions related to the provided dataset only.")
             else:
-                nodes, edges, seen = [], [], set()
-                
-                # Step C: Aesthetic Color & Icon Mapping
-                colors = {
-                    "ORDER": "#FF4B4B", "DELIVERY": "#29B5E8", 
-                    "BILLING": "#FFD166", "ACCOUNTING": "#06D6A0", 
-                    "PAYMENT": "#FFFFFF", "MATERIAL": "#B19CD9"
-                }
+                # Step C: Execute Query
+                df = run_query(sql)
 
-                # Step D: Node Construction
-                for col in df.columns:
-                    # Logic to identify node level for hierarchical layout
-                    level = 0
-                    if "ORDER" in col.upper(): level = 1
-                    if "DELIVERY" in col.upper(): level = 2
-                    if "BILLING" in col.upper(): level = 3
-                    if "ACCOUNTING" in col.upper(): level = 4
-                    if "PAYMENT" in col.upper(): level = 5
+                if df.empty:
+                    st.info("No matching data found in Snowflake for this request.")
+                else:
+                    nodes, edges, seen = [],[], set()
+                    
+                    # Aesthetic Mapping
+                    entity_colors = {
+                        "ORDER": "#FF4B4B", "DELIVERY": "#29B5E8", "BILLING": "#FFD166",
+                        "ACCOUNTING": "#06D6A0", "PAYMENT": "#FFFFFF", "MATERIAL": "#B19CD9"
+                    }
 
-                    for val in df[col].dropna().unique():
-                        node_id = str(val)
-                        if node_id not in seen:
-                            color = "#999999"
-                            for key in colors:
-                                if key in col.upper(): color = colors[key]
+                    # Step D: Node Creation (with NaN Protection)
+                    for col in df.columns:
+                        color = "#999999" # Default
+                        for key in entity_colors:
+                            if key in col.upper(): color = entity_colors[key]
+                        
+                        # Dropna ensures we don't iterate over missing values
+                        for val in df[col].dropna().unique():
+                            if pd.isna(val) or str(val).strip().lower() == 'nan' or str(val).strip() == '':
+                                continue
                             
-                            nodes.append(Node(
-                                id=node_id, label=f"{col}\n{node_id}", 
-                                color=color, size=20, font={'color': 'white', 'size': 12}
-                            ))
-                            seen.add(node_id)
+                            node_id = str(val)
+                            if node_id not in seen:
+                                nodes.append(Node(id=node_id, label=f"{col}\n{node_id}", color=color, size=20))
+                                seen.add(node_id)
 
-                # Step E: Edge Construction
-                for i in range(len(df.columns) - 1):
-                    for _, row in df.iterrows():
-                        u, v = str(row[i]), str(row[i+1])
-                        if u != "None" and v != "None" and u != "" and v != "":
-                            edges.append(Edge(source=u, target=v, color="#4E535E", width=2))
+                    # Step E: Edge Creation (Sequential)
+                    for i in range(len(df.columns) - 1):
+                        for _, row in df.iterrows():
+                            u, v = row[i], row[i+1]
+                            
+                            # Strict validation to prevent drawing edges to/from 'None' or 'NaN'
+                            if pd.notna(u) and pd.notna(v):
+                                u_str, v_str = str(u).strip(), str(v).strip()
+                                if u_str.lower() != 'nan' and v_str.lower() != 'nan' and u_str != "" and v_str != "":
+                                    edges.append(Edge(source=u_str, target=v_str, color="#5D6D7E"))
 
-                # Step F: Appealing Configuration (Hierarchical Flow)
-                config = Config(
-                    width=1200, height=600, 
-                    directed=True, 
-                    hierarchical=True, # This makes the graph look like a process flow
-                    direction="LR",   # Left to Right
-                    nodeHighlightBehavior=True, 
-                    highlightColor="#F7A7A6",
-                    collapsible=False,
-                    physics=False # Static layout for process flows is much cleaner
-                )
-                
-                agraph(nodes=nodes, edges=edges, config=config)
-                
-                # Step G: Audit Trail
-                with st.expander("Technical Audit (SQL & Data)"):
-                    st.code(sql, language="sql")
-                    st.dataframe(df)
+                    # Step F: Hierarchical Rendering
+                    config = Config(
+                        width="100", # Responsive width
+                        height=600, 
+                        directed=True, 
+                        hierarchical=True, 
+                        direction="LR", 
+                        nodeHighlightBehavior=True, 
+                        highlightColor="#F7A7A6"
+                    )
+                    
+                    agraph(nodes=nodes, edges=edges, config=config)
 
+                    # Step G: Technical Audit Trail
+                    with st.expander("Technical Trace (View SQL & Data)"):
+                        st.code(sql, language="sql")
+                        st.dataframe(df)
+
+        except snowflake.connector.errors.ProgrammingError as pe:
+            st.error("SQL Compilation Error. The AI generated an invalid query.")
+            with st.expander("View AI Generated SQL"):
+                st.code(sql, language="sql")
+                st.error(str(pe))
         except Exception as e:
-            st.error(f"SQL Error: {str(e)}")
+            st.error(f"System Error: {str(e)}")
 
+# --- 6. FOOTER ---
 st.markdown("---")
-st.caption(" Forward Deployed Engineer | Hemant Singh | Final Submission")
+st.caption("Senior FDE Submission | Architecture: Snowflake + Gemini + Streamlit")
