@@ -141,7 +141,7 @@ if user_input:
                     # Step F: Interactive Canvas Rendering
                     config = Config(
                         width="100%",          
-                        height="7000px",        
+                        height="1080px",        
                         directed=True,         
                         physics=True,          # Creates organic starburst layout
                         hierarchical=False,    
