@@ -153,4 +153,4 @@ if user_input:
 
 # --- 6. FOOTER ---
 st.markdown("---")
-st.caption("Senior FDE Submission | Architecture: Snowflake + Gemini + Streamlit")
+st.caption("FDE Submission | Architecture: Snowflake + Gemini + Streamlit")
